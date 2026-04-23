@@ -1,0 +1,16 @@
+import { Session, SearchResult, PendingMessage } from "../types";
+export declare function formatFromTeams(sender: string, text: string): string;
+export declare function formatFromFeishu(sender: string, text: string): string;
+export declare function formatNonActiveNotification(display: string, unread: number, email?: string, emailPrefix?: string): string;
+export declare function formatSwitchConfirm(display: string, platform: string): string;
+export declare function formatSearchResults(results: SearchResult[]): string;
+export declare function formatAutoConnect(display: string, email: string, platform: string): string;
+export declare function formatSessionList(sessions: Session[]): string;
+export declare function formatWhoReply(s: Session | undefined): string;
+export declare function formatNoActiveWarning(): string;
+export declare function formatHelpText(): string;
+export declare function formatClearConfirm(): string;
+export declare function formatSelectOutOfRange(): string;
+export declare function formatNoPending(): string;
+export declare function formatAutoActivatedTip(displayName: string, platform: string): string;
+export declare function formatUnreadReplay(messages: PendingMessage[]): string;

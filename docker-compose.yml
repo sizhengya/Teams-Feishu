@@ -1,0 +1,8 @@
+version: "3.9"
+services:
+  bridge:
+    build: .
+    ports: ["3978:3978"]
+    volumes: ["./data:/app/data"]
+    env_file: [.env]
+    restart: unless-stopped

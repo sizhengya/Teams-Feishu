@@ -1,0 +1,12 @@
+import "dotenv/config";
+import express from "express";
+import teamsInbound from "./api/inbound/teams";
+import feishuInbound from "./api/inbound/feishu";
+import { outboundQueue } from "./infra/queue";
+const app = express();
+app.use(express.json());
+app.use("/api/v1/inbound/teams", teamsInbound);
+app.use("/api/v1/inbound/feishu", feishuInbound);
+app.get("/health", (_req,res) => res.json({ status:"ok", version:"2.0.0" }));
+const PORT = parseInt(process.env.PORT||"3978",10);
+app.listen(PORT, () => { console.log(`🚀 Bridge Service v2 running on port ${PORT}`); outboundQueue.start(); });

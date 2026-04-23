@@ -1,0 +1,52 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
+const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+const DB_PATH = process.env.DB_PATH || "./data/bridge.db";
+fs_1.default.mkdirSync(path_1.default.dirname(DB_PATH), { recursive: true });
+const db = new better_sqlite3_1.default(DB_PATH);
+db.pragma("journal_mode = WAL");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_links (
+    teams_user_key TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
+    service_url TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT NOT NULL, owner_key TEXT NOT NULL, owner_platform TEXT NOT NULL,
+    peer_platform TEXT NOT NULL, peer_receive_id_type TEXT NOT NULL,
+    peer_receive_id TEXT NOT NULL, peer_email TEXT NOT NULL DEFAULT '',
+    display_name TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT 'idle',
+    unread_count INTEGER NOT NULL DEFAULT 0, last_message_at TEXT,
+    feishu_chat_id TEXT,
+    PRIMARY KEY (session_id, owner_key)
+  );
+  CREATE TABLE IF NOT EXISTS session_states (
+    owner_key TEXT NOT NULL, owner_platform TEXT NOT NULL, active_session_id TEXT,
+    PRIMARY KEY (owner_key, owner_platform)
+  );
+  CREATE TABLE IF NOT EXISTS message_maps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, src_platform TEXT NOT NULL,
+    src_message_id TEXT NOT NULL, dst_platform TEXT NOT NULL,
+    dst_message_id TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL,
+    uuid TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS pending_selections (
+    owner_key TEXT PRIMARY KEY, results_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS pending_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL, owner_key TEXT NOT NULL,
+    formatted_content TEXT NOT NULL,
+    original_timestamp TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_pm_session ON pending_messages(owner_key, session_id);
+  CREATE INDEX IF NOT EXISTS idx_mm_src ON message_maps(src_platform, src_message_id);
+`);
+exports.default = db;
+//# sourceMappingURL=db.js.map

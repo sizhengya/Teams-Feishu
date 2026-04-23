@@ -1,0 +1,9 @@
+🚀 Bridge Service v2 running on port 3978
+[teams] RAW: {"type":"message","from":{"aadObjectId":"fd4dad1a-0ef7-493c-890e-c3343b7d521d","name":"Test User","id":"fd4dad1a"},"conversation":{"id":"t500"},"serviceUrl":"https://smba.trafficmanager.net/amer/","id":"msg_t500","text":"hello","timestamp":"2026-04-21T15:00:00Z"}
+[teams] incoming msg: from=fd4dad1a-0ef7-493c-890e-c3343b7d521d conv=t500 text=hello
+[repo] findSessionByPeerAnyOwner(fd4dad1a...) => session_id=undefined owner_platform=undefined display=undefined state=undefined
+[router] routeTeamsInbound: teamsUserKey=fd4dad1a feishuSession=undefined ownerPlatform=undefined peerReceiveId=undefined state=undefined
+[teams->feishu] calling findSessionByPeerAnyOwner with action.teamsUserKey=fd4dad1a-0ef7-493c-890e-c3343b7d521d (len=36)
+[repo] findSessionByPeerAnyOwner(fd4dad1a...) => session_id=undefined owner_platform=undefined display=undefined state=undefined
+[teams->feishu] findSessionByPeerAnyOwner result: null/undefined, ownerPlatform=undefined
+[teams->feishu] notify_and_create_idle: no feishuOpenId for fd4dad1a-0ef7-493c-890e-c3343b7d521d
