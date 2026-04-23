@@ -14,9 +14,10 @@ async function handleCommandTeams(msg: InboundTeamsMessage): Promise<RouteAction
   switch (cmd.command) {
     case "chat": {
       if (!cmd.args) {
+        const u = fmt.chatUsage("teams");
         const domain = process.env.FEISHU_EMAIL_DOMAIN || "";
         const hint = domain ? `（飞书域名：@${domain}）` : "";
-        return { type: "reply_bot", text: `⚠️ 请指定邮件前缀：/chat <邮件前缀>${hint}` };
+        return { type: "reply_bot", text: `⚠️ 请指定邮箱地址：${u.syntax}${hint}\n示例：${u.example}` };
       }
       const result = await sm.chatWithSearch(msg.teamsUserKey, "teams", cmd.args);
       if (result.error) return { type: "reply_bot", text: `❌ ${result.error}` };
@@ -33,7 +34,7 @@ async function handleCommandTeams(msg: InboundTeamsMessage): Promise<RouteAction
       const idx = parseInt(cmd.args, 10);
       if (isNaN(idx)) return { type: "reply_bot", text: "⚠️ 请输入数字：/select <序号>" };
       const r = sm.handleSelect(msg.teamsUserKey, "teams", idx);
-      if (r.error === "no_pending") return { type: "reply_bot", text: fmt.formatNoPending() };
+      if (r.error === "no_pending") return { type: "reply_bot", text: fmt.formatNoPending("teams") };
       if (r.error === "out_of_range") return { type: "reply_bot", text: fmt.formatSelectOutOfRange() };
       const pending = sm.flushPendingMessages(msg.teamsUserKey, r.session!.sessionId);
       let reply = fmt.formatSwitchConfirm(r.session!.displayName, r.session!.peerPlatform);
@@ -41,11 +42,11 @@ async function handleCommandTeams(msg: InboundTeamsMessage): Promise<RouteAction
       return { type: "reply_bot", text: reply };
     }
     case "list":
-      return { type: "reply_bot", text: fmt.formatSessionList(sm.listAllSessions(msg.teamsUserKey, "teams"), sm.getActiveSession(msg.teamsUserKey, "teams")?.sessionId) };
+      return { type: "reply_bot", text: fmt.formatSessionList(sm.listAllSessions(msg.teamsUserKey, "teams"), sm.getActiveSession(msg.teamsUserKey, "teams")?.sessionId, "teams") };
     case "who":
-      return { type: "reply_bot", text: fmt.formatWhoReply(sm.getActiveSession(msg.teamsUserKey, "teams")) };
+      return { type: "reply_bot", text: fmt.formatWhoReply(sm.getActiveSession(msg.teamsUserKey, "teams"), "teams") };
     case "help":
-      return { type: "reply_bot", text: fmt.formatHelpText() };
+      return { type: "reply_bot", text: fmt.formatHelpText("teams") };
     case "clear":
       sm.clearAllSessions(msg.teamsUserKey);
       return { type: "reply_bot", text: fmt.formatClearConfirm() };
@@ -72,7 +73,7 @@ export async function routeTeamsInbound(msg: InboundTeamsMessage): Promise<Route
   // spec §1：发送方必须有 active session
   const senderActive = repo.findActive(msg.teamsUserKey, "teams");
   if (!senderActive) {
-    return { type: "reply_bot", text: fmt.formatNoActiveWarning() };
+    return { type: "reply_bot", text: fmt.formatNoActiveWarning("teams") };
   }
   // 接收方（飞书用户）open_id + 其飞书 chat
   const receiverOpenId = senderActive.peerReceiveId;
@@ -112,7 +113,7 @@ export async function routeFeishuInbound(msg: InboundFeishuMessage, ownerKey: st
   // spec §1：发送方必须有 active session
   const senderActive = repo.findActive(ownerKey, "feishu");
   if (!senderActive) {
-    return { type: "reply_bot", text: fmt.formatNoActiveWarning() };
+    return { type: "reply_bot", text: fmt.formatNoActiveWarning("feishu") };
   }
   const receiverTeamsKey = senderActive.peerReceiveId; // Teams AAD ID
   const receiverPlatform: PeerPlatform = senderActive.peerPlatform; // 预期 "teams"

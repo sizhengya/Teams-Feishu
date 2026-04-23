@@ -15,13 +15,14 @@ function extractText(evt: any): string {
 const HELP_MSG = [
   "📖 飞书端指令帮助",
   "",
-  "/chat <Teams邮件前缀> — 搜索 Teams 用户并发起会话",
-  "/select <序号>        — 从搜索结果中选择",
-  "/connect teams:<邮箱> — 直接连接 Teams 用户",
-  "/list                 — 查看所有会话",
-  "/who                  — 查看当前活跃会话",
-  "/clear                — 清空所有会话",
-  "/help                 — 显示本帮助",
+  "/chat <邮箱前缀>       — 搜索 Teams 用户并发起会话",
+  "                        示例：/chat zhengya.si",
+  "/select <序号>          — 从搜索结果中选择",
+  "/connect teams:<邮箱>   — 直接连接 Teams 用户",
+  "/list                   — 查看所有会话",
+  "/who                    — 查看当前活跃会话",
+  "/clear                  — 清空所有会话",
+  "/help                   — 显示本帮助",
   "",
   "💡 连接后直接发消息即可跨平台转发 🔗",
 ].join("\n");
@@ -62,10 +63,10 @@ router.post("/", async (req: Request, res: Response) => {
     const sm = await import("../../core/session-manager");
     const { default: db } = await import("../../store/db");
 
-    // --- /chat <Teams邮件前缀> ---
+    // --- /chat <Teams邮箱前缀> ---
     if (cmd === "chat") {
       if (!args) {
-        const reply = "⚠️ 请指定邮件前缀：/chat <Teams邮件前缀>\n示例：/chat alice@company.com";
+        const reply = "⚠️ 请指定邮箱前缀：/chat <邮箱前缀>\n示例：/chat zhengya.si";
         try { await sendFeishuMessage("open_id", senderOpenId, reply, chatId); } catch { /* ignore */ }
         return res.json({ status: "ok" });
       }
@@ -129,7 +130,7 @@ router.post("/", async (req: Request, res: Response) => {
       }
       const pending = getPendingSelectionsFromFile(ownerKey);
       if (!pending || pending.length === 0) {
-        const reply = "⚠️ 没有待选择的搜索结果\n请先使用 /chat <邮件前缀> 搜索";
+        const reply = "⚠️ 没有待选择的搜索结果\n请先使用 /chat <邮箱前缀> 搜索\n示例：/chat zhengya.si";
         try { await sendFeishuMessage("open_id", senderOpenId, reply, chatId); } catch { /* ignore */ }
         return res.json({ status: "ok" });
       }
@@ -241,7 +242,7 @@ router.post("/", async (req: Request, res: Response) => {
           if (selfEmail) sessions = sessions.filter(s => (s.peerEmail || "").toLowerCase() !== selfEmail);
         } catch { /* ignore */ }
         const active = sm.getActiveSession(ownerKey, "feishu");
-        const reply = formatSessionList(sessions, active?.sessionId);
+        const reply = formatSessionList(sessions, active?.sessionId, "feishu");
         await sendFeishuMessage("open_id", senderOpenId, reply, chatId);
       } catch (e: any) {
         console.error("[feishu /list] send failed:", e?.message);
@@ -253,7 +254,7 @@ router.post("/", async (req: Request, res: Response) => {
     if (cmd === "who") {
       try {
         const s = sm.getActiveSession(ownerKey, "feishu");
-        const reply = formatWhoReply(s);
+        const reply = formatWhoReply(s, "feishu");
         await sendFeishuMessage("open_id", senderOpenId, reply, chatId);
       } catch (e: any) {
         console.error("[feishu /who] send failed:", e?.message);

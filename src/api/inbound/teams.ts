@@ -14,8 +14,8 @@ const router = Router();
 const WELCOME_MSG = (() => {
   const domain = process.env.FEISHU_EMAIL_DOMAIN || "";
   const chatLine = domain
-    ? `  /chat <飞书邮件前缀>  — 搜索并连接飞书用户（飞书域名：@${domain}）`
-    : "  /chat <飞书邮件前缀>  — 搜索并连接飞书用户";
+    ? `  /chat <邮箱地址>  — 搜索并连接飞书用户（飞书域名：@${domain}）`
+    : "  /chat <邮箱地址>  — 搜索并连接飞书用户";
   return [
     "👋 欢迎使用飞书-Teams 消息桥接！",
     "",
@@ -23,6 +23,7 @@ const WELCOME_MSG = (() => {
     "",
     "在 Teams 中：",
     chatLine,
+    "  示例：/chat zhengya.si@szylab.top",
     "  /select <序号>         — 从搜索结果中选择",
     "  /list                 — 查看所有会话",
     "  /who                  — 查看当前活跃会话",
