@@ -24,7 +24,11 @@ export function formatSessionList(sessions:Session[], activeSessionId?:string):s
 }
 export function formatWhoReply(s:Session|undefined):string { if(!s) return "📌 当前无活跃会话\n\n输入 /chat <邮件前缀> 开始聊天"; const p=s.peerPlatform==="feishu"?"飞书":"Teams"; return `📌 当前正在与：【${s.displayName}（${p}）】对话${s.peerEmail?`\n📧 ${s.peerEmail}`:""}\n\n你的回复将发送给 ${s.displayName}`; }
 export function formatNoActiveWarning():string { return "⚠️ 请先选择会话对象\n\n输入 /chat <对方邮件前缀> 搜索并发起会话\n输入 /help 查看帮助"; }
-export function formatHelpText():string { return ["📖 指令帮助","","/chat <邮件前缀>  — 搜索对方平台用户并发起会话","/select <序号>    — 从搜索结果中选择","/connect feishu:<open_id> — 直接连接飞书用户（无需搜索）","/connect teams:<邮箱>  — 直接连接 Teams 用户（无需搜索）","/list             — 列出所有会话","/who              — 查看当前活跃会话","/clear            — 清空所有会话","/help             — 显示本帮助","","💡 普通消息将自动发送给当前活跃会话的对象"].join("\n"); }
+export function formatHelpText():string {
+  const domain = process.env.FEISHU_EMAIL_DOMAIN || "";
+  const chatHint = domain ? `  — 搜索对方平台用户并发起会话（飞书域名：@${domain}）` : "  — 搜索对方平台用户并发起会话";
+  return ["📖 指令帮助","",`/chat <邮件前缀>${chatHint}`,"/select <序号>    — 从搜索结果中选择","/connect feishu:<open_id> — 直接连接飞书用户（无需搜索）","/connect teams:<邮箱>  — 直接连接 Teams 用户（无需搜索）","/list             — 列出所有会话","/who              — 查看当前活跃会话","/clear            — 清空所有会话","/help             — 显示本帮助","","💡 普通消息将自动发送给当前活跃会话的对象"].join("\n");
+}
 export function formatClearConfirm():string { return "🗑️ 所有会话状态已清空"; }
 export function formatSelectOutOfRange():string { return "⚠️ 序号超出范围，请重新选择"; }
 export function formatNoPending():string { return "⚠️ 没有待选择的搜索结果\n请先使用 /chat <邮件前缀> 搜索"; }
@@ -35,8 +39,17 @@ export function formatUnreadReplay(messages:PendingMessage[]):string {
   const truncated=messages.length>MAX?messages.slice(-MAX):messages;
   const header="📨 以下是未读消息：\n";
   const body=truncated.map(m=>{
-    const localTs = new Date(m.ts).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"});
-    return `[${m.from} | ${m.platform==="feishu"?"飞书":"Teams"}]（${localTs}）：${m.text}`;
+    // ts 可能是 ISO 字符串、毫秒数字、或毫秒字符串
+    let d: Date;
+    if (!m.ts) d = new Date();
+    else if (typeof m.ts === "number") d = new Date(m.ts);
+    else if (/^\d+$/.test(m.ts)) d = new Date(parseInt(m.ts, 10));
+    else d = new Date(m.ts);
+    const localTs = isNaN(d.getTime())
+      ? "—"
+      : d.toLocaleString("zh-CN",{timeZone:"Asia/Shanghai",hour12:false,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    const platLabel = m.platform==="feishu"?"飞书":"Teams";
+    return `[${m.from} | ${platLabel}]（${localTs}）：${m.text}`;
   }).join("\n");
   const suffix=messages.length>MAX?`\n\n⚠️ 更早的消息（共${messages.length}条）已省略`:"";
   return header+body+suffix;

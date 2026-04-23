@@ -13,7 +13,11 @@ async function handleCommandTeams(msg: InboundTeamsMessage): Promise<RouteAction
   if (!cmd) return null;
   switch (cmd.command) {
     case "chat": {
-      if (!cmd.args) return { type: "reply_bot", text: "⚠️ 请指定邮件前缀：/chat <邮件前缀>" };
+      if (!cmd.args) {
+        const domain = process.env.FEISHU_EMAIL_DOMAIN || "";
+        const hint = domain ? `（飞书域名：@${domain}）` : "";
+        return { type: "reply_bot", text: `⚠️ 请指定邮件前缀：/chat <邮件前缀>${hint}` };
+      }
       const result = await sm.chatWithSearch(msg.teamsUserKey, "teams", cmd.args);
       if (result.error) return { type: "reply_bot", text: `❌ ${result.error}` };
       if (result.autoConnected) {

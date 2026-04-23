@@ -89,11 +89,14 @@ export function flushPendingMessages(ownerKey:string, sessionId:string):PendingM
   const rows:any[] = db.prepare("SELECT formatted_content,original_timestamp FROM pending_messages WHERE owner_key=? AND session_id=? ORDER BY id ASC").all(ownerKey,sessionId);
   db.prepare("DELETE FROM pending_messages WHERE owner_key=? AND session_id=?").run(ownerKey,sessionId);
   return rows.map(r => {
-    // formatted_content 格式：[发送方 | 平台]：消息内容
-    const match = r.formatted_content.match(/^\[(.+?) \| (\w+)\]：(.+)$/);
-    return match
-      ? { from: match[1], text: match[3], ts: r.original_timestamp, platform: match[2] as "feishu" | "teams" }
-      : { from: "未知", text: r.formatted_content, ts: r.original_timestamp };
+    // formatted_content 格式："[发送方 | 平台]：消息内容"
+    // 平台标识可能为中文「飞书」或英文 "feishu"/"teams"，正则要兼容
+    const match = r.formatted_content.match(/^\[(.+?) \| ([^\]]+)\]：([\s\S]+)$/);
+    if (!match) return { from: "未知", text: r.formatted_content, ts: r.original_timestamp };
+    const platformRaw = match[2].trim().toLowerCase();
+    const platform: "feishu" | "teams" =
+      platformRaw === "feishu" || platformRaw === "飞书" ? "feishu" : "teams";
+    return { from: match[1], text: match[3], ts: r.original_timestamp, platform };
   });
 }
 

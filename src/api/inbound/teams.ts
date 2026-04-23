@@ -11,20 +11,26 @@ import { v4 as uuidv4 } from "uuid";
 const router = Router();
 
 /** 欢迎消息（用户安装 Bot 时自动发送） */
-const WELCOME_MSG = [
-  "👋 欢迎使用飞书-Teams 消息桥接！",
-  "",
-  "📖 使用说明：",
-  "",
-  "在 Teams 中：",
-  "  /chat <飞书邮件前缀>  — 搜索并连接飞书用户",
-  "  /select <序号>         — 从搜索结果中选择",
-  "  /list                 — 查看所有会话",
-  "  /who                  — 查看当前活跃会话",
-  "  /help                 — 显示帮助",
-  "",
-  "连接后直接发消息即可跨平台转发 🔗",
-].join("\n");
+const WELCOME_MSG = (() => {
+  const domain = process.env.FEISHU_EMAIL_DOMAIN || "";
+  const chatLine = domain
+    ? `  /chat <飞书邮件前缀>  — 搜索并连接飞书用户（飞书域名：@${domain}）`
+    : "  /chat <飞书邮件前缀>  — 搜索并连接飞书用户";
+  return [
+    "👋 欢迎使用飞书-Teams 消息桥接！",
+    "",
+    "📖 使用说明：",
+    "",
+    "在 Teams 中：",
+    chatLine,
+    "  /select <序号>         — 从搜索结果中选择",
+    "  /list                 — 查看所有会话",
+    "  /who                  — 查看当前活跃会话",
+    "  /help                 — 显示帮助",
+    "",
+    "连接后直接发消息即可跨平台转发 🔗",
+  ].join("\n");
+})();
 
 /**
  * 将真实 Teams Bot Framework Webhook 格式转换为内部格式

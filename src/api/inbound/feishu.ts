@@ -287,13 +287,23 @@ router.post("/", async (req: Request, res: Response) => {
     // 2. 再写 message_map
     // 3. 最后发送
     const { routeFeishuInbound } = await import("../../core/router");
+    // 飞书 create_time 是毫秒字符串，需要先转 ISO 才能下游正确解析
+    const rawTs = evt.message?.createTime || evt.message?.create_time;
+    let normalizedTs: string;
+    if (rawTs && /^\d+$/.test(String(rawTs))) {
+      normalizedTs = new Date(parseInt(String(rawTs), 10)).toISOString();
+    } else if (rawTs) {
+      normalizedTs = String(rawTs);
+    } else {
+      normalizedTs = new Date().toISOString();
+    }
     const inboundMsg = {
       senderOpenId: ownerKey,
       senderDisplay: resolvedSenderDisplay,
       chatId,
       messageId,
       text: rawText,
-      timestamp: evt.message?.createTime || evt.message?.create_time || new Date().toISOString(),
+      timestamp: normalizedTs,
     };
     const action = await routeFeishuInbound(inboundMsg, ownerKey);
 
