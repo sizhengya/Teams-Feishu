@@ -1,1 +1,14 @@
 node_modules
+# secrets
+.env
+
+# dependencies
+node_modules/
+
+# logs
+*.log
+
+# OS / IDE
+.DS_Store
+.vscode/
+
