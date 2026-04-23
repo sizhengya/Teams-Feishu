@@ -7,8 +7,11 @@ export function getDb(): any { return db; }
 export function buildSessionId(peerPlatform:string, idType:string, id:string):string { return `${peerPlatform}:${idType}:${id}`; }
 
 export function findOrCreate(ownerKey:string, ownerPlatform:PeerPlatform, sr:SearchResult):Session {
-  // Find existing session by peer_receive_id + peer_receive_id_type (exact match required)
-  let row:any = db.prepare("SELECT * FROM sessions WHERE owner_key=? AND owner_platform=? AND peer_receive_id=? AND peer_receive_id_type=? AND peer_platform=? LIMIT 1").get(ownerKey, ownerPlatform, sr.receiveId, sr.receiveIdType, sr.platform);
+  // Find existing session by peer_receive_id only (ignore receive_id_type).
+  // 同一对端在不同入口可能带不同 id_type 标签（例如 Teams：/chat 搜索返回 "user_key"，
+  // 入站路由硬编码 "aad_id"，但实际值都是 AAD objectId）。若也按 type 过滤，会在对端切换
+  // 会话后生成重复 session，导致消息被判为"非当前会话"而走 notify 分支。
+  let row:any = db.prepare("SELECT * FROM sessions WHERE owner_key=? AND owner_platform=? AND peer_receive_id=? AND peer_platform=? LIMIT 1").get(ownerKey, ownerPlatform, sr.receiveId, sr.platform);
   if(row) {
     // Update display name/email if search result has better info
     if(sr.displayName && row.display_name !== sr.displayName) {
