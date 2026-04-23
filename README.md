@@ -61,4 +61,5 @@ SQLite
 - ✅ v3-final：6 个关键 Bug 已修复
 - ✅ 可直接部署验证
 
+<!-- deploy test: 2026-04-22 -->
 👉 **详细规则与实现请查看 `spec.md` 与 `design.md`**
