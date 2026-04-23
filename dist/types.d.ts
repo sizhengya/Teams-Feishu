@@ -65,29 +65,37 @@ export type RouteAction = {
     peerId: string;
     peerIdType: string;
     feishuChatId?: string;
+    tip?: string;
+    srcMessageId: string;
 } | {
     type: "forward_to_teams";
     sessionId: string;
     content: string;
     teamsUserKey: string;
+    tip?: string;
+    srcMessageId: string;
 } | {
-    type: "notify_non_active";
+    type: "notify_feishu_peer";
     sessionId: string;
-    ownerKey: string;
-    ownerPlatform: PeerPlatform;
-    ownerDisplay: string;
-    rawText: string;
-    timestamp: string;
+    receiverOpenId: string;
+    feishuChatId?: string;
+    senderDisplay: string;
+    senderTeamsKey: string;
+    unread: number;
+    srcMessageId: string;
+} | {
+    type: "notify_teams_peer";
+    sessionId: string;
+    teamsUserKey: string;
+    senderDisplay: string;
+    senderOpenId: string;
+    unread: number;
+    srcMessageId: string;
 } | {
     type: "reply_bot";
     text: string;
 } | {
     type: "noop";
-} | {
-    type: "notify_and_create_idle";
-    content: string;
-    teamsUserKey: string;
-    senderDisplay: string;
 };
 export interface PendingMessage {
     from: string;

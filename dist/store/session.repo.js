@@ -15,13 +15,6 @@ exports.clearUnread = clearUnread;
 exports.getUnreadInfo = getUnreadInfo;
 exports.deleteAllByOwner = deleteAllByOwner;
 exports.findSessionByPeer = findSessionByPeer;
-exports.findActiveByPeer = findActiveByPeer;
-exports.findActiveByOwnerAndPeer = findActiveByOwnerAndPeer;
-exports.findActiveSessionByOwnerKey = findActiveSessionByOwnerKey;
-exports.findOtherActiveSession = findOtherActiveSession;
-exports.findSessionByPeerAnyOwner = findSessionByPeerAnyOwner;
-exports.findSessionByOwnerKey = findSessionByOwnerKey;
-exports.findSessionByPeerReceiveIdAndOwnerPlatform = findSessionByPeerReceiveIdAndOwnerPlatform;
 exports.updateFeishuChatId = updateFeishuChatId;
 exports.savePendingSelections = savePendingSelections;
 exports.getPendingSelections = getPendingSelections;
@@ -68,7 +61,15 @@ function findActive(ownerKey, ownerPlatform) {
     const r = db_1.default.prepare("SELECT * FROM sessions WHERE session_id=? AND owner_key=?").get(st.active_session_id, ownerKey);
     return r ? r2s(r) : undefined;
 }
-function listByOwner(ownerKey) { return db_1.default.prepare("SELECT * FROM sessions WHERE owner_key=? ORDER BY last_message_at DESC").all(ownerKey).map(r2s); }
+function listByOwner(ownerKey, ownerPlatform) {
+    const sql = ownerPlatform
+        ? "SELECT * FROM sessions WHERE owner_key=? AND owner_platform=? ORDER BY last_message_at DESC"
+        : "SELECT * FROM sessions WHERE owner_key=? ORDER BY last_message_at DESC";
+    const rows = ownerPlatform
+        ? db_1.default.prepare(sql).all(ownerKey, ownerPlatform)
+        : db_1.default.prepare(sql).all(ownerKey);
+    return rows.map(r2s);
+}
 function incrementUnread(ownerKey, sid) { db_1.default.prepare("UPDATE sessions SET unread_count=unread_count+1,last_message_at=datetime('now') WHERE session_id=? AND owner_key=?").run(sid, ownerKey); }
 function clearUnread(ownerKey, sid) { const r = db_1.default.prepare("SELECT unread_count FROM sessions WHERE session_id=? AND owner_key=?").get(sid, ownerKey); const c = r?.unread_count || 0; db_1.default.prepare("UPDATE sessions SET unread_count=0 WHERE session_id=? AND owner_key=?").run(sid, ownerKey); return c; }
 function getUnreadInfo(ownerKey, sid) { const r = db_1.default.prepare("SELECT display_name,unread_count,peer_email FROM sessions WHERE session_id=? AND owner_key=?").get(sid, ownerKey); return { display: r?.display_name || "", unread: r?.unread_count || 0, email: r?.peer_email || "" }; }
@@ -82,61 +83,6 @@ function findSessionByPeer(peerPlatform, peerId) {
     const r = db_1.default.prepare("SELECT * FROM sessions WHERE session_id=? AND owner_platform=?").get(sid, peerPlatform === "feishu" ? "teams" : "feishu");
     return r ? r2s(r) : undefined;
 }
-/**
- * 按 peer_receive_id 查找活跃 session（用于飞书用户发消息时查找对应 Teams 用户的 session）
- */
-function findActiveByPeer(peerId, peerPlatform) {
-    const r = db_1.default.prepare("SELECT * FROM sessions WHERE peer_receive_id=? AND peer_platform=? AND state='active' LIMIT 1").get(peerId, peerPlatform);
-    return r ? r2s(r) : undefined;
-}
-/**
- * 按 owner_platform + peer_platform 查找活跃 session
- * 用于：飞书用户发消息时，查找以该飞书用户为 owner 的 session
- */
-function findActiveByOwnerAndPeer(ownerKey, ownerPlatform, peerPlatform) {
-    const r = db_1.default.prepare("SELECT * FROM sessions WHERE owner_key=? AND owner_platform=? AND peer_platform=? AND state='active' LIMIT 1").get(ownerKey, ownerPlatform, peerPlatform);
-    return r ? r2s(r) : undefined;
-}
-/**
- * 查找活跃 session（alias for findActive）
- */
-function findActiveSessionByOwnerKey(ownerKey, ownerPlatform) {
-    return findActive(ownerKey, ownerPlatform);
-}
-/**
- * 查找所有者拥有与其他人的 session（排除指定 peer，active 或 idle 状态）
- * 用于判断用户是否正在和其他人聊天
- * @param ownerPlatform 所有者平台（'teams' 或 'feishu'），不能硬编码
- */
-function findOtherActiveSession(ownerKey, ownerPlatform, excludePeerId) {
-    const r = db_1.default.prepare("SELECT * FROM sessions WHERE owner_key=? AND owner_platform=? AND state IN ('active','idle') AND peer_receive_id<>? LIMIT 1").get(ownerKey, ownerPlatform, excludePeerId);
-    return r ? r2s(r) : undefined;
-}
-/**
- * 按 peer_receive_id 或 owner_key 查找 session，忽略 owner_platform
- * 用于：Teams 用户发消息时，通过 Teams AAD ID 找到对应的飞书用户 session
- *
- * 两种情况：
- * 1. 飞书用户先发(/chat) → Teams AAD ID 在 owner_key，Feishu open_id 在 peer_receive_id
- * 2. Teams 用户先发 → Feishu open_id 在 owner_key，Teams AAD ID 在 peer_receive_id
- */
-function findSessionByPeerAnyOwner(teamsUserKey) {
-    // 查找以 Teams 用户为 peer 的飞书用户 session（飞书用户拥有这个 session）
-    // 优先查找 owner_platform=feishu 的 session（飞书用户视角，能看到对方是谁）
-    // 再查找 owner_platform=teams 的 session（Teams 用户视角，peer 是飞书用户）
-    const r = db_1.default.prepare("SELECT * FROM sessions WHERE (owner_key=? AND owner_platform='teams') OR (peer_receive_id=? AND owner_platform='feishu') ORDER BY CASE WHEN owner_platform='feishu' THEN 0 ELSE 1 END, last_message_at DESC LIMIT 1").get(teamsUserKey, teamsUserKey);
-    const s = r ? r2s(r) : undefined;
-    console.log(`[repo] findSessionByPeerAnyOwner(${teamsUserKey.substring(0, 8)}...) => session_id=${s?.sessionId} owner_platform=${s?.ownerPlatform} display=${s?.displayName} state=${s?.state}`);
-    return s;
-}
-/**
- * 通过 owner_key 和 owner_platform 精确查找 session
- * @param ownerKey 会话所有者的 ID（feishu open_id 或 teams AAD ID）
- * @param ownerPlatform 会话所有者的平台（'feishu' 或 'teams'）
- */
-function findSessionByOwnerKey(ownerKey, ownerPlatform) { const r = db_1.default.prepare("SELECT * FROM sessions WHERE owner_key=? AND owner_platform=? LIMIT 1").get(ownerKey, ownerPlatform); return r ? r2s(r) : undefined; }
-/** 通过 peer_receive_id 和 owner_platform 精确查找 session（已废弃，用 findSessionByOwnerKey 代替） */
-function findSessionByPeerReceiveIdAndOwnerPlatform(peerReceiveId, ownerPlatform) { const r = db_1.default.prepare("SELECT * FROM sessions WHERE peer_receive_id=? AND owner_platform=? LIMIT 1").get(peerReceiveId, ownerPlatform); return r ? r2s(r) : undefined; }
 /** 更新 session 的 feishu_chat_id（用于 open_id 发送失败时 fallback） */
 function updateFeishuChatId(ownerKey, sid, chatId) {
     db_1.default.prepare("UPDATE sessions SET feishu_chat_id=? WHERE session_id=? AND owner_key=?").run(chatId, sid, ownerKey);
@@ -159,11 +105,9 @@ function getPendingSelections(ownerKey) {
 function clearPendingSelections(ownerKey) { db_1.default.prepare("DELETE FROM pending_selections WHERE owner_key=?").run(ownerKey); }
 // ===== Pending Messages (非活跃会话的未读消息缓存) =====
 function savePendingMessage(sessionId, ownerKey, formattedContent, timestamp) {
-    // formatted_content 格式：[发送方 | 平台]：消息内容
-    const match = formattedContent.match(/^\[(.+?) \| (\w+)\]：(.+)$/);
-    const senderDisplay = match ? match[1] : "未知";
-    const text = match ? match[3] : formattedContent;
-    db_1.default.prepare("INSERT INTO pending_messages (session_id,owner_key,sender_display,text,formatted_content,original_timestamp) VALUES (?,?,?,?,?,?)").run(sessionId, ownerKey, senderDisplay, text, formattedContent, timestamp);
+    // 按 design §3: pending_messages 只存 formatted_content（含平台标识）+ original_timestamp。
+    // 发送方名/原文在回放时从 formatted_content 的 "[sender | platform]：text" 前缀解析。
+    db_1.default.prepare("INSERT INTO pending_messages (session_id,owner_key,formatted_content,original_timestamp) VALUES (?,?,?,?)").run(sessionId, ownerKey, formattedContent, timestamp);
 }
 function flushPendingMessages(ownerKey, sessionId) {
     const rows = db_1.default.prepare("SELECT formatted_content,original_timestamp FROM pending_messages WHERE owner_key=? AND session_id=? ORDER BY id ASC").all(ownerKey, sessionId);

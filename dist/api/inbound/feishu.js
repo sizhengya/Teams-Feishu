@@ -116,11 +116,8 @@ router.post("/", async (req, res) => {
                     return res.json({ status: "ok" });
                 }
                 if (results.length === 1) {
-                    // 获取飞书用户信息（用于在 Teams 侧 session 显示）
+                    // 获取飞书用户信息（仅用于日志；spec §2.1：A /chat B 只建 A→B）
                     const feishuUser = await (0, feishu_client_1.getFeishuUserByOpenId)(ownerKey).catch(() => null);
-                    const feishuDisplayName = feishuUser?.name || ownerKey;
-                    const feishuEmail = feishuUser?.email || "";
-                    // 使用 findOrCreate 查找/创建 session（优先返回有 pending 的 idle session）
                     const { findOrCreate, activateSession, flushPendingMessages, getDb } = await Promise.resolve().then(() => __importStar(require("../../store/session.repo")));
                     const { formatUnreadReplay } = await Promise.resolve().then(() => __importStar(require("../../core/formatter")));
                     const feishuSearchResult = {
@@ -130,20 +127,10 @@ router.post("/", async (req, res) => {
                         receiveIdType: results[0].receiveIdType || "user_key",
                         receiveId: results[0].receiveId,
                     };
-                    // 查找/创建飞书用户侧的 session
+                    // spec §2.1：只建 owner→peer 的 session
                     const feishuSession = findOrCreate(ownerKey, "feishu", feishuSearchResult);
-                    const teamsSearchResult = {
-                        email: feishuEmail,
-                        displayName: feishuDisplayName,
-                        platform: "feishu",
-                        receiveIdType: "open_id",
-                        receiveId: ownerKey,
-                    };
-                    const teamsSession = findOrCreate(results[0].receiveId, "teams", teamsSearchResult);
-                    // 激活 session
                     activateSession(ownerKey, "feishu", feishuSession.sessionId);
-                    activateSession(results[0].receiveId, "teams", teamsSession.sessionId);
-                    // 更新 feishu_chat_id
+                    // 更新 feishu_chat_id（方便后续 fallback 发送）
                     getDb().prepare("UPDATE sessions SET feishu_chat_id=? WHERE session_id=? AND owner_key=?").run(chatId, feishuSession.sessionId, ownerKey);
                     // 回放 pending 消息（如果有）
                     const unreadPending = flushPendingMessages(ownerKey, feishuSession.sessionId);
@@ -205,11 +192,7 @@ router.post("/", async (req, res) => {
                 return res.json({ status: "ok" });
             }
             const selected = pending[idx - 1];
-            // 获取飞书用户信息（用于在 Teams 侧 session 显示）
-            const feishuUser = await (0, feishu_client_1.getFeishuUserByOpenId)(ownerKey).catch(() => null);
-            const feishuDisplayName = feishuUser?.name || ownerKey;
-            const feishuEmail = feishuUser?.email || "";
-            // 使用 findOrCreate 查找/创建 session（优先返回有 pending 的 idle session）
+            // spec §2.1：/select 只建 owner→peer session
             const { findOrCreate, activateSession, flushPendingMessages, getDb } = await Promise.resolve().then(() => __importStar(require("../../store/session.repo")));
             const { formatUnreadReplay } = await Promise.resolve().then(() => __importStar(require("../../core/formatter")));
             const feishuSearchResult = {
@@ -220,16 +203,7 @@ router.post("/", async (req, res) => {
                 receiveId: selected.receiveId,
             };
             const feishuSession = findOrCreate(ownerKey, "feishu", feishuSearchResult);
-            const teamsSearchResult = {
-                email: feishuEmail,
-                displayName: feishuDisplayName,
-                platform: "feishu",
-                receiveIdType: "open_id",
-                receiveId: ownerKey,
-            };
-            const teamsSession = findOrCreate(selected.receiveId, "teams", teamsSearchResult);
             activateSession(ownerKey, "feishu", feishuSession.sessionId);
-            activateSession(selected.receiveId, "teams", teamsSession.sessionId);
             getDb().prepare("UPDATE sessions SET feishu_chat_id=? WHERE session_id=? AND owner_key=?").run(chatId, feishuSession.sessionId, ownerKey);
             clearPendingSelectionsFromFile(ownerKey);
             // 回放 pending 消息（如果有）
@@ -318,8 +292,19 @@ router.post("/", async (req, res) => {
         // --- /list ---
         if (cmd === "list") {
             try {
-                const sessions = sm.listAllSessions(ownerKey);
-                const reply = (0, formatter_1.formatSessionList)(sessions);
+                // 仅列出该飞书用户作为 owner、peer 为 Teams 的会话（spec §5：用户视角）
+                let sessions = sm.listAllSessions(ownerKey, "feishu")
+                    .filter(s => s.peerPlatform === "teams");
+                // 过滤"自己"：peer_email 等于当前飞书用户自己的邮箱 → 历史遗留 self 条目
+                try {
+                    const self = await (0, feishu_client_1.getFeishuUserByOpenId)(ownerKey).catch(() => null);
+                    const selfEmail = (self?.email || "").toLowerCase();
+                    if (selfEmail)
+                        sessions = sessions.filter(s => (s.peerEmail || "").toLowerCase() !== selfEmail);
+                }
+                catch { /* ignore */ }
+                const active = sm.getActiveSession(ownerKey, "feishu");
+                const reply = (0, formatter_1.formatSessionList)(sessions, active?.sessionId);
                 await (0, feishu_client_1.sendFeishuMessage)("open_id", senderOpenId, reply, chatId);
             }
             catch (e) {
@@ -360,155 +345,68 @@ router.post("/", async (req, res) => {
             }
             return res.json({ status: "ok" });
         }
-        // --- 普通消息路由：区分两种场景 ---
-        // 场景 A：飞书用户主动发给 Teams（飞书用户拥有 active feishu→teams session）
-        // 场景 B：飞书用户回复 Teams 用户的消息（Teams 用户拥有 teams→feishu session，飞书用户是 peer）
-        let active = sm.getActiveSession(ownerKey, "feishu");
-        let isScenarioB = false;
-        let teamsSession;
-        // 查找 Teams 侧 session（以该飞书用户为 peer）：
-        // 当 active 存在时 → 用 findActiveByOwnerAndPeer 获取 Feishu 用户的 active Teams session
-        // 当 active 不存在时 → 用 findSessionByOwnerKey 查找 Teams 侧 session（owner=Teams用户）
-        const { findActiveByOwnerAndPeer, findSessionByOwnerKey, findSessionByPeerReceiveIdAndOwnerPlatform } = await Promise.resolve().then(() => __importStar(require("../../store/session.repo")));
-        const peerSession = active
-            ? findActiveByOwnerAndPeer(ownerKey, "feishu", "teams") // Feishu 用户的 active Teams session
-            : findSessionByOwnerKey(ownerKey, "teams"); // 当无 active 时，查找 Teams 侧 session
-        // === 路由判断（参考 v3-final ensureReverseSession 逻辑） ===
-        // 1. active 存在，且 peerReceiveId === teamsUserKey → 直接投递（场景 A）
-        // 2. active 存在，但 peerReceiveId !== teamsUserKey → pending（不该发给其他人）
-        // 3. active 不存在，有 peerSession（idle） → pending + 通知
-        // 4. active 不存在，无 peerSession → 提示
-        if (active) {
-            // 场景 A：有 active session
-            const teamsUserKey = active.peerReceiveId;
-            if (teamsSession) {
-                // 已经有与该 Teams 用户的 session（之前场景 B 找到的）
-                // → 直接投递
-                isScenarioB = true;
-                const { activateSession, clearUnread } = await Promise.resolve().then(() => __importStar(require("../../store/session.repo")));
-                const { default: db } = await Promise.resolve().then(() => __importStar(require("../../store/db")));
-                db.transaction(() => {
-                    activateSession(ownerKey, "feishu", peerSession.sessionId);
-                    activateSession(peerSession.ownerKey, peerSession.ownerPlatform, peerSession.sessionId);
-                })();
-                clearUnread(ownerKey, peerSession.sessionId);
-                clearUnread(peerSession.ownerKey, peerSession.sessionId);
-                active = peerSession;
-            }
-            else {
-                // 用 active.peerReceiveId 投递（场景 A）
-                // 检查是否有与另一个 Teams 用户的 peerSession（场景 B 情况）
-                const anyPeerSession = findSessionByPeerReceiveIdAndOwnerPlatform(ownerKey, "teams");
-                // 比较 ownerKey（Teams 用户 ID）而不是 peerReceiveId
-                console.log(`[FEISHU-IN] peer mismatch check: active.peerReceiveId=${active.peerReceiveId?.substring(0, 8)} anyPeerSession.ownerKey=${anyPeerSession?.ownerKey?.substring(0, 8)} anyPeerSession.sessionId=${anyPeerSession?.sessionId}`);
-                if (anyPeerSession && anyPeerSession.ownerKey !== active.peerReceiveId) {
-                    // active 存在，但用户也在和另一个 Teams 用户通信 → pending
-                    const ts = evt.message?.createTime || evt.message?.create_time || new Date().toISOString();
-                    const { incrementUnread, savePendingMessage } = await Promise.resolve().then(() => __importStar(require("../../store/session.repo")));
-                    const { sendTeamsProactiveByKey } = await Promise.resolve().then(() => __importStar(require("../../outbound/teams-client")));
-                    const targetTeamsUser = anyPeerSession.ownerKey; // Teams 用户的 AAD ID
-                    console.log(`[FEISHU-IN] active exists but peer mismatch: target=${targetTeamsUser.substring(0, 8)}`);
-                    incrementUnread(targetTeamsUser, anyPeerSession.sessionId);
-                    // Bug #5 修复：存 formatted_content（含平台标识），不是原始文本
-                    const formattedContent = (0, formatter_1.formatFromFeishu)(resolvedSenderDisplay, rawText);
-                    savePendingMessage(anyPeerSession.sessionId, targetTeamsUser, formattedContent, ts);
-                    let feishuEmailPrefix = resolvedSenderDisplay;
-                    try {
-                        const feishuUser = await (0, feishu_client_1.getFeishuUserByOpenId)(ownerKey).catch(() => null);
-                        if (feishuUser?.email)
-                            feishuEmailPrefix = feishuUser.email.split("@")[0];
-                    }
-                    catch { /* ignore */ }
-                    const dbRef = (await Promise.resolve().then(() => __importStar(require("../../store/db")))).default;
-                    const { formatNonActiveNotification } = await Promise.resolve().then(() => __importStar(require("../../core/formatter")));
-                    const unreadCount = dbRef.prepare("SELECT unread_count FROM sessions WHERE session_id=? AND owner_key=?").get(anyPeerSession.sessionId, targetTeamsUser)?.unread_count || 1;
-                    const teamsNotif = formatNonActiveNotification(resolvedSenderDisplay, unreadCount, undefined, feishuEmailPrefix);
-                    // Bug #3 修复：sendTeamsProactiveByKey 现在会 throw
-                    try {
-                        await sendTeamsProactiveByKey(targetTeamsUser, teamsNotif);
-                    }
-                    catch (e) {
-                        console.error(`[FEISHU-IN] notify send failed:`, e?.message);
-                    }
-                    // Bug #6 修复：写 message_map 审计
-                    (0, message_map_repo_1.saveMessageMap)({ srcPlatform: "feishu", srcMessageId: messageId, dstPlatform: "teams", dstMessageId: "", sessionId: anyPeerSession.sessionId, uuid: (0, uuid_1.v4)(), createdAt: "" });
-                    // 注意：飞书发送方（senderOpenId）不需收到任何通知。
-                    return res.json({ status: "ok" });
-                }
-                // 正常投递场景 A
-            }
-        }
-        else if (peerSession) {
-            // 无 active，但有与某 Teams 用户的 session（idle）→ deliver_activated：自动激活 + 先发提示再发正文
-            const ts = evt.message?.createTime || evt.message?.create_time || new Date().toISOString();
-            const { incrementUnread, savePendingMessage, activateSession, clearUnread } = await Promise.resolve().then(() => __importStar(require("../../store/session.repo")));
-            const { sendTeamsProactiveByKey } = await Promise.resolve().then(() => __importStar(require("../../outbound/teams-client")));
-            const { formatFromFeishu } = await Promise.resolve().then(() => __importStar(require("../../core/formatter")));
-            const teamsUserKey = peerSession.ownerKey;
-            console.log(`[FEISHU-IN] no active, peerSession idle: teamsUserKey=${teamsUserKey.substring(0, 8)}`);
-            // Bug #4 修复：deliver_activated → 先发提示再发正文
-            const formattedContent = formatFromFeishu(resolvedSenderDisplay, rawText);
-            const tip = (0, formatter_1.formatAutoActivatedTip)(resolvedSenderDisplay, "feishu");
-            // 自动激活双方的 session
-            const txn = db.transaction(() => {
-                activateSession(ownerKey, "feishu", peerSession.sessionId);
-                activateSession(teamsUserKey, peerSession.ownerPlatform, peerSession.sessionId);
-            });
-            txn();
-            clearUnread(ownerKey, peerSession.sessionId);
-            clearUnread(teamsUserKey, peerSession.sessionId);
-            // 先发提示，再发正文
-            // Bug #3 修复：sendTeamsProactiveByKey 会 throw
-            try {
-                await sendTeamsProactiveByKey(teamsUserKey, tip);
-                await sendTeamsProactiveByKey(teamsUserKey, formattedContent);
-                (0, message_map_repo_1.saveMessageMap)({ srcPlatform: "feishu", srcMessageId: messageId, dstPlatform: "teams", dstMessageId: "", sessionId: peerSession.sessionId, uuid: (0, uuid_1.v4)(), createdAt: "" });
-            }
-            catch (e) {
-                console.error(`[FEISHU-IN] deliver_activated failed:`, e?.message);
-                // 通知发送方
+        // --- 普通消息路由（design §6 "路由铁律"）---
+        // 1. 先 ensureReverseSession（由 routeFeishuInbound 内部调用）
+        // 2. 再写 message_map
+        // 3. 最后发送
+        const { routeFeishuInbound } = await Promise.resolve().then(() => __importStar(require("../../core/router")));
+        const inboundMsg = {
+            senderOpenId: ownerKey,
+            senderDisplay: resolvedSenderDisplay,
+            chatId,
+            messageId,
+            text: rawText,
+            timestamp: evt.message?.createTime || evt.message?.create_time || new Date().toISOString(),
+        };
+        const action = await routeFeishuInbound(inboundMsg, ownerKey);
+        switch (action.type) {
+            case "reply_bot":
                 try {
-                    await (0, feishu_client_1.sendFeishuMessage)("open_id", senderOpenId, "⚠️ 消息发送失败，对方可能未安装 Bot", chatId);
+                    await (0, feishu_client_1.sendFeishuMessage)("open_id", senderOpenId, action.text, chatId);
                 }
                 catch { /* ignore */ }
+                return res.json({ status: "ok" });
+            case "forward_to_teams": {
+                try {
+                    if (action.tip)
+                        await (0, teams_client_1.sendTeamsProactiveByKey)(action.teamsUserKey, action.tip);
+                    await (0, teams_client_1.sendTeamsProactiveByKey)(action.teamsUserKey, action.content);
+                    (0, message_map_repo_1.saveMessageMap)({ srcPlatform: "feishu", srcMessageId: action.srcMessageId, dstPlatform: "teams", dstMessageId: "", sessionId: action.sessionId, uuid: (0, uuid_1.v4)(), createdAt: "" });
+                }
+                catch (e) {
+                    console.error("[feishu->teams] forward failed:", e?.message);
+                    try {
+                        await (0, feishu_client_1.sendFeishuMessage)("open_id", senderOpenId, "❌ 对方尚未启用 Bot 或消息发送失败", chatId);
+                    }
+                    catch { /* ignore */ }
+                }
+                return res.json({ status: "forwarded" });
             }
-            return res.json({ status: "ok" });
-        }
-        else {
-            // 无 active 且无 peerSession → 返回提示，让用户先通过 /chat 建立会话
-            // 参考飞书 Bot 处理非当前会话的做法：提示用户先建立连接
-            const reply = (0, formatter_1.formatNoActiveWarning)();
-            try {
-                await (0, feishu_client_1.sendFeishuMessage)("open_id", senderOpenId, reply, chatId);
+            case "notify_teams_peer": {
+                // spec §10：飞书→Teams notify；接收方看到通知，发送方不收任何回执
+                const { formatNonActiveNotification } = await Promise.resolve().then(() => __importStar(require("../../core/formatter")));
+                let emailPrefix = action.senderDisplay;
+                try {
+                    const u = await (0, feishu_client_1.getFeishuUserByOpenId)(action.senderOpenId).catch(() => null);
+                    if (u?.email)
+                        emailPrefix = u.email.split("@")[0];
+                }
+                catch { /* ignore */ }
+                const notification = formatNonActiveNotification(action.senderDisplay, action.unread, undefined, emailPrefix);
+                try {
+                    await (0, teams_client_1.sendTeamsProactiveByKey)(action.teamsUserKey, notification);
+                }
+                catch (e) {
+                    console.error("[feishu->teams] notify send failed:", e?.message);
+                }
+                (0, message_map_repo_1.saveMessageMap)({ srcPlatform: "feishu", srcMessageId: action.srcMessageId, dstPlatform: "teams", dstMessageId: "", sessionId: action.sessionId, uuid: (0, uuid_1.v4)(), createdAt: "" });
+                return res.json({ status: "ok" });
             }
-            catch { /* ignore */ }
-            return res.json({ status: "ok" });
+            case "noop":
+                return res.json({ status: "ok" });
+            default:
+                return res.json({ status: "ok" });
         }
-        // 转发消息：场景 A 时用 active.peerReceiveId；场景 B 时用 teamsSession.ownerKey
-        const content = (0, formatter_1.formatFromFeishu)(resolvedSenderDisplay, rawText);
-        const teamsUserKey = isScenarioB ? (teamsSession?.ownerKey ?? active.peerReceiveId) : active.peerReceiveId;
-        try {
-            await (0, teams_client_1.sendTeamsProactiveByKey)(teamsUserKey, content);
-            const uuid = (0, uuid_1.v4)();
-            (0, message_map_repo_1.saveMessageMap)({
-                srcPlatform: "feishu",
-                srcMessageId: messageId,
-                dstPlatform: "teams",
-                dstMessageId: "",
-                sessionId: active.sessionId,
-                uuid,
-                createdAt: "",
-            });
-        }
-        catch (e) {
-            console.error("[feishu->teams] forward failed:", e?.message);
-            try {
-                await (0, feishu_client_1.sendFeishuMessage)("open_id", senderOpenId, "⚠️ 消息发送失败，请稍后重试", chatId);
-            }
-            catch { /* ignore */ }
-            return res.json({ status: "ok" });
-        }
-        return res.json({ status: "forwarded" });
     }
     catch (e) {
         console.error("[inbound/feishu]", e);

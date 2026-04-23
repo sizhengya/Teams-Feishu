@@ -26,10 +26,18 @@ function formatSearchResults(results) {
     return `🔍 搜索结果：\n\n${lines.join("\n")}\n\n👉 输入 /select <序号> 选择对象`;
 }
 function formatAutoConnect(display, email, platform) { return `✅ 找到唯一匹配：${display}（${email}）\n已自动切换到与【${display}（${platform === "feishu" ? "飞书" : "Teams"}）】的对话`; }
-function formatSessionList(sessions) {
+function formatSessionList(sessions, activeSessionId) {
     if (sessions.length === 0)
         return "📭 暂无会话\n\n输入 /chat <邮件前缀> 发起会话";
-    const lines = sessions.map(s => { const m = s.state === "active" ? "🟢" : "⚪"; const p = s.peerPlatform === "feishu" ? "飞书" : "Teams"; const u = s.unreadCount > 0 ? ` (未读 ${s.unreadCount})` : ""; const email = s.peerPlatform === "teams" && s.peerEmail ? ` <${s.peerEmail}>` : ""; return `${m} ${s.displayName}（${p}）${email}${u}`; });
+    const lines = sessions.map(s => {
+        // spec: 🟢 仅标记 session_states.active_session_id 所指的唯一 session
+        const isActive = activeSessionId ? s.sessionId === activeSessionId : s.state === "active";
+        const m = isActive ? "🟢" : "⚪";
+        const p = s.peerPlatform === "feishu" ? "飞书" : "Teams";
+        const u = s.unreadCount > 0 ? ` (未读 ${s.unreadCount})` : "";
+        const email = s.peerPlatform === "teams" && s.peerEmail ? ` <${s.peerEmail}>` : "";
+        return `${m} ${s.displayName}（${p}）${email}${u}`;
+    });
     return `📋 所有会话：\n\n${lines.join("\n")}`;
 }
 function formatWhoReply(s) { if (!s)

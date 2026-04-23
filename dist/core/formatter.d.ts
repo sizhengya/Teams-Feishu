@@ -5,7 +5,7 @@ export declare function formatNonActiveNotification(display: string, unread: num
 export declare function formatSwitchConfirm(display: string, platform: string): string;
 export declare function formatSearchResults(results: SearchResult[]): string;
 export declare function formatAutoConnect(display: string, email: string, platform: string): string;
-export declare function formatSessionList(sessions: Session[]): string;
+export declare function formatSessionList(sessions: Session[], activeSessionId?: string): string;
 export declare function formatWhoReply(s: Session | undefined): string;
 export declare function formatNoActiveWarning(): string;
 export declare function formatHelpText(): string;

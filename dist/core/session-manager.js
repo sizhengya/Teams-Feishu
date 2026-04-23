@@ -42,6 +42,7 @@ exports.getActiveSession = getActiveSession;
 exports.listAllSessions = listAllSessions;
 exports.clearAllSessions = clearAllSessions;
 exports.flushPendingMessages = flushPendingMessages;
+exports.ensureReverseSession = ensureReverseSession;
 const repo = __importStar(require("../store/session.repo"));
 const user_resolver_1 = require("./user-resolver");
 const CMD_RE = /^\/(chat|list|who|help|clear|select|connect)\s*(.*)/i;
@@ -137,7 +138,42 @@ function switchToExistingSession(ownerKey, ownerPlatform, sessionId) {
     return { session, previousUnread: prev };
 }
 function getActiveSession(ownerKey, ownerPlatform) { return repo.findActive(ownerKey, ownerPlatform); }
-function listAllSessions(ownerKey) { return repo.listByOwner(ownerKey); }
+function listAllSessions(ownerKey, ownerPlatform) { return repo.listByOwner(ownerKey, ownerPlatform); }
 function clearAllSessions(ownerKey) { repo.deleteAllByOwner(ownerKey); repo.clearPendingSelections(ownerKey); repo.clearPendingMessagesForOwner(ownerKey); }
 function flushPendingMessages(ownerKey, sessionId) { return repo.flushPendingMessages(ownerKey, sessionId); }
+/**
+ * 接收方视角的反向 Session 决策（design §4）。
+ *
+ * - 若接收方无 active：自动激活反向 session → "deliver_activated"
+ * - 若接收方 active 正是此发送方：→ "deliver"
+ * - 若接收方 active 是别人：+unread + 存 pending formatted_content → "notify"
+ *
+ * 所有分支都在单事务内完成（design §7 并发与安全）。
+ */
+function ensureReverseSession(receiverKey, receiverPlatform, senderAsPeer, formattedContent, timestamp) {
+    const sr = {
+        email: senderAsPeer.email,
+        displayName: senderAsPeer.displayName,
+        platform: senderAsPeer.platform,
+        receiveIdType: senderAsPeer.receiveIdType,
+        receiveId: senderAsPeer.receiveId,
+    };
+    const db = repo.getDb();
+    const txn = db.transaction(() => {
+        const session = repo.findOrCreate(receiverKey, receiverPlatform, sr);
+        const active = repo.findActive(receiverKey, receiverPlatform);
+        if (!active) {
+            repo.activateSession(receiverKey, receiverPlatform, session.sessionId);
+            repo.clearUnread(receiverKey, session.sessionId);
+            return { decision: "deliver_activated", session: repo.findActive(receiverKey, receiverPlatform) };
+        }
+        if (active.sessionId === session.sessionId) {
+            return { decision: "deliver", session: active };
+        }
+        repo.incrementUnread(receiverKey, session.sessionId);
+        repo.savePendingMessage(session.sessionId, receiverKey, formattedContent, timestamp);
+        return { decision: "notify", session };
+    });
+    return txn();
+}
 //# sourceMappingURL=session-manager.js.map
