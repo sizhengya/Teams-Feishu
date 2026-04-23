@@ -231,8 +231,17 @@ router.post("/", async (req: Request, res: Response) => {
     // --- /list ---
     if (cmd === "list") {
       try {
-        const sessions = sm.listAllSessions(ownerKey);
-        const reply = formatSessionList(sessions);
+        // 仅列出该飞书用户作为 owner、peer 为 Teams 的会话（spec §5：用户视角）
+        let sessions = sm.listAllSessions(ownerKey, "feishu")
+          .filter(s => s.peerPlatform === "teams");
+        // 过滤"自己"：peer_email 等于当前飞书用户自己的邮箱 → 历史遗留 self 条目
+        try {
+          const self = await getFeishuUserByOpenId(ownerKey).catch(() => null) as { email?: string } | null;
+          const selfEmail = (self?.email || "").toLowerCase();
+          if (selfEmail) sessions = sessions.filter(s => (s.peerEmail || "").toLowerCase() !== selfEmail);
+        } catch { /* ignore */ }
+        const active = sm.getActiveSession(ownerKey, "feishu");
+        const reply = formatSessionList(sessions, active?.sessionId);
         await sendFeishuMessage("open_id", senderOpenId, reply, chatId);
       } catch (e: any) {
         console.error("[feishu /list] send failed:", e?.message);

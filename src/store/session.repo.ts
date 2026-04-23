@@ -37,7 +37,15 @@ export function findActive(ownerKey:string, ownerPlatform:PeerPlatform):Session|
   const r:any=db.prepare("SELECT * FROM sessions WHERE session_id=? AND owner_key=?").get(st.active_session_id,ownerKey);
   return r?r2s(r):undefined;
 }
-export function listByOwner(ownerKey:string):Session[] { return(db.prepare("SELECT * FROM sessions WHERE owner_key=? ORDER BY last_message_at DESC").all(ownerKey) as any[]).map(r2s); }
+export function listByOwner(ownerKey:string, ownerPlatform?:PeerPlatform):Session[] {
+  const sql = ownerPlatform
+    ? "SELECT * FROM sessions WHERE owner_key=? AND owner_platform=? ORDER BY last_message_at DESC"
+    : "SELECT * FROM sessions WHERE owner_key=? ORDER BY last_message_at DESC";
+  const rows = ownerPlatform
+    ? (db.prepare(sql).all(ownerKey, ownerPlatform) as any[])
+    : (db.prepare(sql).all(ownerKey) as any[]);
+  return rows.map(r2s);
+}
 export function incrementUnread(ownerKey:string, sid:string):void { db.prepare("UPDATE sessions SET unread_count=unread_count+1,last_message_at=datetime('now') WHERE session_id=? AND owner_key=?").run(sid,ownerKey); }
 export function clearUnread(ownerKey:string, sid:string):number { const r:any=db.prepare("SELECT unread_count FROM sessions WHERE session_id=? AND owner_key=?").get(sid,ownerKey); const c=r?.unread_count||0; db.prepare("UPDATE sessions SET unread_count=0 WHERE session_id=? AND owner_key=?").run(sid,ownerKey); return c; }
 export function getUnreadInfo(ownerKey:string, sid:string):{display:string;unread:number;email:string} { const r:any=db.prepare("SELECT display_name,unread_count,peer_email FROM sessions WHERE session_id=? AND owner_key=?").get(sid,ownerKey); return{display:r?.display_name||"",unread:r?.unread_count||0,email:r?.peer_email||""}; }

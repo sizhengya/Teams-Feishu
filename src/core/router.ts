@@ -37,7 +37,7 @@ async function handleCommandTeams(msg: InboundTeamsMessage): Promise<RouteAction
       return { type: "reply_bot", text: reply };
     }
     case "list":
-      return { type: "reply_bot", text: fmt.formatSessionList(sm.listAllSessions(msg.teamsUserKey)) };
+      return { type: "reply_bot", text: fmt.formatSessionList(sm.listAllSessions(msg.teamsUserKey, "teams"), sm.getActiveSession(msg.teamsUserKey, "teams")?.sessionId) };
     case "who":
       return { type: "reply_bot", text: fmt.formatWhoReply(sm.getActiveSession(msg.teamsUserKey, "teams")) };
     case "help":

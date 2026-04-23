@@ -9,9 +9,17 @@ export function formatSearchResults(results:SearchResult[]):string {
   return `🔍 搜索结果：\n\n${lines.join("\n")}\n\n👉 输入 /select <序号> 选择对象`;
 }
 export function formatAutoConnect(display:string,email:string,platform:string):string { return `✅ 找到唯一匹配：${display}（${email}）\n已自动切换到与【${display}（${platform==="feishu"?"飞书":"Teams"}）】的对话`; }
-export function formatSessionList(sessions:Session[]):string {
+export function formatSessionList(sessions:Session[], activeSessionId?:string):string {
   if(sessions.length===0) return "📭 暂无会话\n\n输入 /chat <邮件前缀> 发起会话";
-  const lines=sessions.map(s=>{ const m=s.state==="active"?"🟢":"⚪"; const p=s.peerPlatform==="feishu"?"飞书":"Teams"; const u=s.unreadCount>0?` (未读 ${s.unreadCount})`:""; const email=s.peerPlatform==="teams"&&s.peerEmail?` <${s.peerEmail}>`:""; return `${m} ${s.displayName}（${p}）${email}${u}`; });
+  const lines=sessions.map(s=>{
+    // spec: 🟢 仅标记 session_states.active_session_id 所指的唯一 session
+    const isActive = activeSessionId ? s.sessionId===activeSessionId : s.state==="active";
+    const m=isActive?"🟢":"⚪";
+    const p=s.peerPlatform==="feishu"?"飞书":"Teams";
+    const u=s.unreadCount>0?` (未读 ${s.unreadCount})`:"";
+    const email=s.peerPlatform==="teams"&&s.peerEmail?` <${s.peerEmail}>`:"";
+    return `${m} ${s.displayName}（${p}）${email}${u}`;
+  });
   return `📋 所有会话：\n\n${lines.join("\n")}`;
 }
 export function formatWhoReply(s:Session|undefined):string { if(!s) return "📌 当前无活跃会话\n\n输入 /chat <邮件前缀> 开始聊天"; const p=s.peerPlatform==="feishu"?"飞书":"Teams"; return `📌 当前正在与：【${s.displayName}（${p}）】对话${s.peerEmail?`\n📧 ${s.peerEmail}`:""}\n\n你的回复将发送给 ${s.displayName}`; }

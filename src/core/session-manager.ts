@@ -93,7 +93,7 @@ export function switchToExistingSession(ownerKey: string, ownerPlatform: PeerPla
 }
 
 export function getActiveSession(ownerKey: string, ownerPlatform: PeerPlatform): Session | undefined { return repo.findActive(ownerKey, ownerPlatform); }
-export function listAllSessions(ownerKey: string): Session[] { return repo.listByOwner(ownerKey); }
+export function listAllSessions(ownerKey: string, ownerPlatform?: PeerPlatform): Session[] { return repo.listByOwner(ownerKey, ownerPlatform); }
 export function clearAllSessions(ownerKey: string): void { repo.deleteAllByOwner(ownerKey); repo.clearPendingSelections(ownerKey); repo.clearPendingMessagesForOwner(ownerKey); }
 export function flushPendingMessages(ownerKey: string, sessionId: string): PendingMessage[] { return repo.flushPendingMessages(ownerKey, sessionId); }
 
