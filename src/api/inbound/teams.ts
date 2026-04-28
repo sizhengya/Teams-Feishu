@@ -188,12 +188,13 @@ router.post("/", async (req: Request, res: Response) => {
         // 该分支理论上在 Teams 入站路径不会走到，保留以防路由复用。
         const { formatNonActiveNotification } = await import("../../core/formatter");
         const { getFeishuUserByOpenId } = await import("../../outbound/feishu-client");
-        let emailPrefix = action.senderDisplay;
+        // Teams 侧 /chat 需完整邮箱，使用发送方的飞书邮箱全拼
+        let chatHint = action.senderDisplay;
         try {
           const u = await getFeishuUserByOpenId(action.senderOpenId).catch(() => null) as { email?: string } | null;
-          if (u?.email) emailPrefix = u.email.split("@")[0];
+          if (u?.email) chatHint = u.email;
         } catch { /* ignore */ }
-        const notification = formatNonActiveNotification(action.senderDisplay, action.unread, undefined, emailPrefix);
+        const notification = formatNonActiveNotification(action.senderDisplay, action.unread, undefined, chatHint);
         try {
           await sendTeamsProactiveByKey(action.teamsUserKey, notification);
         } catch (e: any) {

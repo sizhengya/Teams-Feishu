@@ -326,12 +326,13 @@ router.post("/", async (req: Request, res: Response) => {
       case "notify_teams_peer": {
         // spec §10：飞书→Teams notify；接收方看到通知，发送方不收任何回执
         const { formatNonActiveNotification } = await import("../../core/formatter");
-        let emailPrefix = action.senderDisplay;
+        // Teams 侧 /chat 需完整邮箱（chatUsage("teams")），使用发送方的飞书邮箱全拼
+        let chatHint = action.senderDisplay;
         try {
           const u = await getFeishuUserByOpenId(action.senderOpenId).catch(() => null) as { email?: string } | null;
-          if (u?.email) emailPrefix = u.email.split("@")[0];
+          if (u?.email) chatHint = u.email;
         } catch { /* ignore */ }
-        const notification = formatNonActiveNotification(action.senderDisplay, action.unread, undefined, emailPrefix);
+        const notification = formatNonActiveNotification(action.senderDisplay, action.unread, undefined, chatHint);
         try {
           await sendTeamsProactiveByKey(action.teamsUserKey, notification);
         } catch (e: any) {
