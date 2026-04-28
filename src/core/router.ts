@@ -92,11 +92,8 @@ export async function routeTeamsInbound(msg: InboundTeamsMessage): Promise<Route
   if (result.decision === "deliver") {
     return { type: "forward_to_feishu", sessionId: result.session.sessionId, content: formatted, peerId: receiverOpenId, peerIdType: "open_id", feishuChatId, srcMessageId: msg.messageId };
   }
-  if (result.decision === "deliver_activated") {
-    const tip = fmt.formatAutoActivatedTip(msg.senderDisplay, "teams");
-    return { type: "forward_to_feishu", sessionId: result.session.sessionId, content: formatted, peerId: receiverOpenId, peerIdType: "open_id", feishuChatId, tip, srcMessageId: msg.messageId };
-  }
-  // notify：通知合并窗口
+  // deliver_activated 与 notify 行为一致（spec v3-final §3）：仅通知、正文存 pending、不泄露正文
+  // 通知合并窗口（10s/session）
   if (!notificationMerger.shouldNotify(result.session.sessionId)) {
     return { type: "noop" };
   }
@@ -130,10 +127,7 @@ export async function routeFeishuInbound(msg: InboundFeishuMessage, ownerKey: st
   if (result.decision === "deliver") {
     return { type: "forward_to_teams", sessionId: result.session.sessionId, content: formatted, teamsUserKey: receiverTeamsKey, srcMessageId: msg.messageId };
   }
-  if (result.decision === "deliver_activated") {
-    const tip = fmt.formatAutoActivatedTip(msg.senderDisplay, "feishu");
-    return { type: "forward_to_teams", sessionId: result.session.sessionId, content: formatted, teamsUserKey: receiverTeamsKey, tip, srcMessageId: msg.messageId };
-  }
+  // deliver_activated 与 notify 行为一致（spec v3-final §3）：仅通知、正文存 pending、不泄露正文
   if (!notificationMerger.shouldNotify(result.session.sessionId)) {
     return { type: "noop" };
   }

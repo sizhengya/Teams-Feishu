@@ -116,9 +116,10 @@ export interface EnsureReverseResult {
 }
 
 /**
- * 接收方视角的反向 Session 决策（design §4）。
+ * 接收方视角的反向 Session 决策（design §4 / spec §3）。
  *
- * - 若接收方无 active：自动激活反向 session → "deliver_activated"
+ * - 若接收方无 active：保持 idle 反向 session，+unread + 存 pending → "deliver_activated"
+ *   （行为与 notify 相同：仅通知，正文存 pending；不激活、不投递正文）
  * - 若接收方 active 正是此发送方：→ "deliver"
  * - 若接收方 active 是别人：+unread + 存 pending formatted_content → "notify"
  *
@@ -143,9 +144,10 @@ export function ensureReverseSession(
     const session = repo.findOrCreate(receiverKey, receiverPlatform, sr);
     const active = repo.findActive(receiverKey, receiverPlatform);
     if (!active) {
-      repo.activateSession(receiverKey, receiverPlatform, session.sessionId);
-      repo.clearUnread(receiverKey, session.sessionId);
-      return { decision: "deliver_activated", session: repo.findActive(receiverKey, receiverPlatform)! };
+      // spec v3-final §3：无 active 时也只通知 + 存 pending，绝不投递正文
+      repo.incrementUnread(receiverKey, session.sessionId);
+      repo.savePendingMessage(session.sessionId, receiverKey, formattedContent, timestamp);
+      return { decision: "deliver_activated", session };
     }
     if (active.sessionId === session.sessionId) {
       return { decision: "deliver", session: active };

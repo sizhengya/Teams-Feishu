@@ -59,7 +59,9 @@ function ensureReverseSession(receiverKey, senderAsPeer, formatted, ts) {
   active = findActive(receiverKey)
 
   if (!active) {
-    activate(session)
+    // 与 notify 行为一致：仅通知，正文存 pending（spec v3-final §3）
+    incrementUnread(session)
+    savePending(formatted, ts)
     return "deliver_activated"
   }
 

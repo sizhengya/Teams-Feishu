@@ -86,7 +86,7 @@ async function testDeliver() {
 }
 
 async function testDeliverActivated() {
-  console.log("\n[TC-03] deliver_activated: receiver 无 active");
+  console.log("\n[TC-03] deliver_activated: receiver 无 active → 仅通知，正文存 pending（spec v3-final §3）");
   resetDb();
   const fOid = "ou_alice2", tAad = "aad_bob2";
   // Teams Bob 发起：先 /chat → Bob 有 active 指向 Alice。Alice（receiver）还没有任何 session。
@@ -97,16 +97,24 @@ async function testDeliverActivated() {
 
   const action = await routeTeamsInbound({
     teamsUserKey: tAad, conversationId: "c1", serviceUrl: "s", messageId: "m-first",
-    senderDisplay: "Bob", text: "hello alice", timestamp: "2026-04-22T00:00:00Z",
+    senderDisplay: "Bob", text: "SECRET-NO-LEAK", timestamp: "2026-04-22T00:00:00Z",
   });
-  assert(action.type === "forward_to_feishu", `action.type=forward_to_feishu (got ${action.type})`);
-  if (action.type === "forward_to_feishu") {
-    assert(!!action.tip, "deliver_activated 带 tip");
-    assert(action.content.includes("hello alice"), "content 含正文");
+  assert(action.type === "notify_feishu_peer", `action.type=notify_feishu_peer (got ${action.type})`);
+  if (action.type === "notify_feishu_peer") {
+    const hasBody = JSON.stringify(action).includes("SECRET-NO-LEAK");
+    assert(!hasBody, "deliver_activated action 不带正文（spec §3 铁律）");
   }
-  // Alice 侧的反向 session 应已创建并 active
-  const revActive = db.prepare("SELECT * FROM session_states WHERE owner_key=?").get(fOid) as any;
-  assert(!!revActive?.active_session_id, "receiver 的 session_states 已激活");
+  // pending 应已写入正文
+  const pending = db.prepare("SELECT * FROM pending_messages WHERE owner_key=?").all(fOid) as any[];
+  assert(pending.length === 1, "pending 存 1 条");
+  assert(pending[0].formatted_content.includes("SECRET-NO-LEAK"), "pending.formatted_content 含正文");
+  // receiver 不应被自动激活（等待用户 /chat）
+  const revActive = db.prepare("SELECT active_session_id FROM session_states WHERE owner_key=?").get(fOid) as any;
+  assert(!revActive, "receiver 不被自动激活（必须由用户 /chat 触发回放）");
+  // unread +1
+  const sid = repo.buildSessionId("teams", "aad_id", tAad);
+  const rev = db.prepare("SELECT unread_count FROM sessions WHERE owner_key=? AND session_id=?").get(fOid, sid) as any;
+  assert(rev?.unread_count === 1, "unread=1");
   // design §2 "A→B ≠ B→A"：Teams 发送方 Bob 的 active 不应被改（仍指向 tSid）
   const senderActive = db.prepare("SELECT active_session_id FROM session_states WHERE owner_key=?").get(tAad) as any;
   assert(senderActive?.active_session_id === tSid, "发送方 active 未被改写（design §2）");
