@@ -26,7 +26,7 @@
 | Decision | 接收方状态 | 行为 |
 |----|----|----|
 | deliver | Active=发送方 | 直接投递正文 |
-| deliver_activated | 无 Active | 提示 + 正文 |
+| deliver_activated | 无 Active | 仅通知，正文存 pending |
 | notify | Active=他人 | 仅通知，正文存 pending |
 
 > ⚠️ **notify 场景下绝不投递正文**
